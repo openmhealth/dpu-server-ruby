@@ -17,7 +17,7 @@ class BmiDpu
     ]
   end
 
-  def self.schema
+  def self.schema(start_dt, end_dt, params)
     {
       type: 'object',
       fields: [

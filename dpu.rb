@@ -52,7 +52,7 @@ namespace '/omh/v1' do
     end
 
     get '' do
-      @dpu.schema.to_json
+      @dpu.schema(@start_dt, @end_dt, params).to_json
     end
 
     get '/requirements' do
