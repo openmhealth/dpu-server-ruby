@@ -2,14 +2,14 @@ class BmiDpu
   def self.requirements(start_dt, end_dt, params)
     [
       {
-        schema_id: 'omh:withings:height_m',
+        schema_id: 'omh:omh:body-height',
         version: 1,
-        min_num_to_return: 1,
+        include_one_previous: true,
         t_start: start_dt,
         t_end: end_dt,
       },
       {
-        schema_id: 'omh:withings:weight_kg',
+        schema_id: 'omh:omh:body-weight',
         version: 1,
         t_start: start_dt,
         t_end: end_dt,
@@ -22,17 +22,31 @@ class BmiDpu
       type: 'object',
       fields: [
         {
+          type: 'object',
+          name: 'effective-timeframe',
+          fields: [
+            {
+              type: 'number',
+              name: 'start-time'
+            }
+          ]
+        },
+        {
           type: 'number',
           doc: 'BMI',
-          name: 'bmi'
+          name: 'value'
+        },
+        {
+          type: 'string',
+          name: 'unit'
         }
       ]
     }
   end
 
   def self.process(start_dt, end_dt, params, input)
-    heights = input['omh:withings:height_m']
-    weights = input['omh:withings:weight_kg']
+    heights = input['omh:omh:body-height']
+    weights = input['omh:omh:body-weight']
 
     unless heights && weights
       raise 'missing data'
@@ -43,25 +57,45 @@ class BmiDpu
     unless heights.empty?
       height_index = 0
       weights.each do |weight|
-        weight_datetime = DateTime.parse(weight['metadata']['timestamp'])
+        weight_timestamp = 
+          weight['data']['effective-timeframe']['start-time']
+        raise 'weight missing start-time' unless weight_timestamp
+        weight_datetime = Time.at(weight_timestamp).to_datetime
 
-        while (height_index + 1) < heights.size
-          next_height_datetime =
-            DateTime.parse(heights[height_index + 1]['metadata']['timestamp'])
+        # Find the matching height. Most recent before the weight.
+        while height_index < heights.size
+          height_data = heights[height_index]['data']
+          height_timestamp =
+            height_data['effective-timeframe']['start-time']
+          raise 'height missing start-time' unless height_timestamp
+          height_datetime = Time.at(height_timestamp).to_datetime
 
-          height_index += 1 if next_height_datetime < weight_datetime
+          if height_datetime > weight_datetime
+            height_index += 1
+          else
+            break
+          end
         end
+        break if height_index >= heights.size
+
+        height = heights[height_index]
+
+        raise 'height not in m' unless height['data']['unit'] == 'm'
+        raise 'weight not in kg' unless weight['data']['unit'] == 'kg'
 
         bmi = 
-          (weight['data']['weight_kg'] / 
-           (heights[height_index]['data']['height_m'] ** 2))
+          (weight['data']['value'] / (height['data']['value'] ** 2))
 
         output << {
           metadata: {
-            timestamp: weight['metadata']['timestamp']
+            timestamp: weight_datetime.to_s
           },
           data: {
-            bmi: bmi
+            'effective-timeframe' => {
+              'start-time' => weight_timestamp
+            },
+            value: bmi,
+            unit: 'bmi'
           },
         }
       end
