@@ -17,6 +17,8 @@ if development?
   end
 end
 
+Rack::Utils.key_space_limit = 10e6
+
 configure do
   set :server, :puma
 end
